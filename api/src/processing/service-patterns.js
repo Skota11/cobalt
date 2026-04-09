@@ -29,6 +29,9 @@ export const testers = {
         pattern.id?.length <= 12 ||
         pattern.audioId?.length <= 12,
 
+    "nicovideo": pattern =>
+        pattern.id?.length <= 16,
+
     "ok": pattern =>
         pattern.id?.length <= 16,
 

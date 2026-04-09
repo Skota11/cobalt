@@ -31,6 +31,7 @@ import facebook from "./services/facebook.js";
 import bluesky from "./services/bluesky.js";
 import xiaohongshu from "./services/xiaohongshu.js";
 import newgrounds from "./services/newgrounds.js";
+import nicovideo from "./services/nicovideo.js";
 
 const MAX_RETRY_AMOUNT = 5;
 
@@ -293,6 +294,15 @@ export default async function match({ host, patternMatch, params, authType, retr
                 r = await newgrounds({
                     ...patternMatch,
                     quality: params.videoQuality,
+                });
+                break;
+            case "nicovideo":
+                r = await nicovideo({
+                    id: patternMatch.id,
+                    quality: params.videoQuality,
+                    isAudioOnly,
+                    isAudioMuted,
+                    dispatcher,
                 });
                 break;
 

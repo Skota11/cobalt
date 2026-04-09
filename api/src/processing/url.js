@@ -117,6 +117,12 @@ function aliasURL(url) {
                 url = new URL(`https://www.reddit.com/video/${parts[1]}`);
             }
             break;
+
+        case "nico":
+            if (url.hostname === "nico.ms" && parts.length >= 2) {
+                url = new URL(`https://www.nicovideo.jp/watch/${parts[1]}`);
+            }
+            break;
     }
 
     return url;

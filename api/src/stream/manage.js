@@ -160,7 +160,9 @@ export function createInternalStream(url, obj = {}, isSubtitles) {
     }
 
     let headers;
-    if (obj.headers) {
+    if (obj.headers instanceof Map) {
+        headers = new Map(obj.headers);
+    } else if (obj.headers) {
         headers = new Map(Object.entries(obj.headers));
     }
 

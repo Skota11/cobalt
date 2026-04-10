@@ -176,7 +176,7 @@ const convertAudio = async (streamInfo, res) => {
         args.push('-vbr', 'off');
     }
 
-    if (streamInfo.audioFormat === 'mp4a') {
+    if (streamInfo.audioFormat === 'mp4a' || streamInfo.audioFormat === 'm4a') {
         args.push('-movflags', 'frag_keyframe+empty_moov');
     }
 

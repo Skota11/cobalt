@@ -6,6 +6,22 @@ import { handleHlsPlaylist, isHlsResponse, probeInternalHLSTunnel } from "./inte
 const CHUNK_SIZE = BigInt(8e6); // 8 MB
 const min = (a, b) => a < b ? a : b;
 
+const streamDebugEnabled = process.env.STREAM_DEBUG === "1";
+const logStreamDebug = (...args) => {
+    if (streamDebugEnabled) {
+        console.log("[stream]", ...args);
+    }
+};
+
+const parseUrlParts = (value) => {
+    try {
+        const parsed = new URL(value);
+        return { host: parsed.host, path: parsed.pathname };
+    } catch {
+        return { host: null, path: null };
+    }
+};
+
 const serviceNeedsChunks = new Set(["youtube", "vk"]);
 
 async function* readChunks(streamInfo, size) {
@@ -108,12 +124,45 @@ async function handleGenericStream(streamInfo, res) {
     const cleanup = () => res.end();
 
     try {
+        const headerMap = streamInfo.headers || new Map();
+        const requestHeaders = {
+            ...Object.fromEntries(headerMap),
+            ...getHeaders(streamInfo.service),
+            host: undefined
+        };
+
+        const getHeaderValue = (name) => {
+            if (headerMap.has(name)) return headerMap.get(name);
+            const lower = name.toLowerCase();
+            if (headerMap.has(lower)) return headerMap.get(lower);
+            const upper = name.toUpperCase();
+            if (headerMap.has(upper)) return headerMap.get(upper);
+            return undefined;
+        };
+
+        const { path, host } = parseUrlParts(streamInfo.url);
+        const isKeyRequest = path?.includes("/keys/");
+
+        if (isKeyRequest) {
+            const cookie = requestHeaders.cookie ?? requestHeaders.Cookie ?? getHeaderValue("cookie") ?? getHeaderValue("Cookie");
+            const referer = requestHeaders.referer ?? requestHeaders.Referer ?? getHeaderValue("referer") ?? getHeaderValue("Referer");
+            const origin = requestHeaders.origin ?? requestHeaders.Origin ?? getHeaderValue("origin") ?? getHeaderValue("Origin");
+
+            if (cookie) requestHeaders.cookie = cookie;
+            if (referer) requestHeaders.referer = referer;
+            if (origin) requestHeaders.origin = origin;
+
+            delete requestHeaders.range;
+            delete requestHeaders.host;
+
+            if (streamInfo.service === "nicovideo" || host === "delivery.domand.nicovideo.jp") {
+                requestHeaders.referer ??= "https://www.nicovideo.jp/";
+                requestHeaders.origin ??= "https://www.nicovideo.jp";
+            }
+        }
+
         const fileResponse = await request(streamInfo.url, {
-            headers: {
-                ...Object.fromEntries(streamInfo.headers),
-                ...getHeaders(streamInfo.service),
-                host: undefined
-            },
+            headers: requestHeaders,
             dispatcher: streamInfo.dispatcher,
             signal,
             maxRedirections: 16
@@ -123,6 +172,34 @@ async function handleGenericStream(streamInfo, res) {
         fileResponse.body.on('error', () => {});
 
         const isHls = isHlsResponse(fileResponse, streamInfo);
+
+        if (streamDebugEnabled) {
+            const { host, path } = parseUrlParts(streamInfo.url);
+            const isKey = path?.includes("/keys/");
+            const isSegment = path?.endsWith(".cmfv") || path?.endsWith(".cmfa") || path?.endsWith(".m4s");
+            const shouldLogHeaders = fileResponse.statusCode >= 400 || isKey;
+
+            logStreamDebug("fetch", {
+                service: streamInfo.service,
+                status: fileResponse.statusCode,
+                isHls,
+                host,
+                path,
+                contentType: fileResponse.headers["content-type"],
+                contentLength: fileResponse.headers["content-length"],
+                isKey,
+                isSegment,
+            });
+
+            if (shouldLogHeaders) {
+                logStreamDebug("fetch.headers", {
+                    service: streamInfo.service,
+                    host,
+                    path,
+                    headers: requestHeaders,
+                });
+            }
+        }
 
         for (const [ name, value ] of Object.entries(fileResponse.headers)) {
             if (!isHls || name.toLowerCase() !== 'content-length') {
@@ -140,7 +217,16 @@ async function handleGenericStream(streamInfo, res) {
         } else {
             pipe(fileResponse.body, res, cleanup);
         }
-    } catch {
+    } catch (error) {
+        if (streamDebugEnabled) {
+            const { host, path } = parseUrlParts(streamInfo.url);
+            logStreamDebug("error", {
+                service: streamInfo.service,
+                host,
+                path,
+                message: error?.message || String(error),
+            });
+        }
         closeRequest(streamInfo.controller);
         cleanup();
     }

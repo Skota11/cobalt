@@ -10,24 +10,90 @@ function getURL(url) {
     }
 }
 
+function toInternalUri(uri, streamInfo) {
+    const parsed = getURL(uri);
+    if (parsed) {
+        if (parsed.hostname === '127.0.0.1') {
+            return uri;
+        }
+        return createInternalStream(uri, streamInfo);
+    }
+
+    const resolved = new URL(uri, streamInfo.url).toString();
+    return createInternalStream(resolved, streamInfo);
+}
+
+function rewriteUriAttributes(line, streamInfo) {
+    return line.replace(/URI=("[^"]*"|'[^']*'|[^,\s]+)/g, (match) => {
+        const rawValue = match.slice(4);
+        const quote = rawValue[0];
+        let uri = rawValue;
+        let wrap = "";
+
+        if (quote === '"' || quote === "'") {
+            uri = rawValue.slice(1, -1);
+            wrap = quote;
+        }
+
+        const internalUri = toInternalUri(uri, streamInfo);
+        return `URI=${wrap}${internalUri}${wrap}`;
+    });
+}
+
+function rewritePlaylist(rawPlaylist, streamInfo) {
+    const lines = rawPlaylist.split(/\r?\n/);
+    const rewritten = lines.map((line) => {
+        const trimmed = line.trim();
+        if (!trimmed) return line;
+
+        if (!trimmed.startsWith('#')) {
+            return toInternalUri(trimmed, streamInfo);
+        }
+
+        if (trimmed.startsWith('#EXT-X-KEY')
+            || trimmed.startsWith('#EXT-X-MAP')
+            || trimmed.startsWith('#EXT-X-MEDIA')
+            || trimmed.startsWith('#EXT-X-I-FRAME-STREAM-INF')
+            || trimmed.startsWith('#EXT-X-SESSION-KEY')) {
+            return rewriteUriAttributes(line, streamInfo);
+        }
+
+        return line;
+    });
+
+    return rewritten.join('\n');
+}
+
 function transformObject(streamInfo, hlsObject) {
     if (hlsObject === undefined) {
         return (object) => transformObject(streamInfo, object);
     }
 
     let fullUrl;
-    if (getURL(hlsObject.uri)) {
-        fullUrl = new URL(hlsObject.uri);
+    let rawUrl;
+    const absoluteUrl = getURL(hlsObject.uri);
+    if (absoluteUrl) {
+        fullUrl = absoluteUrl;
+        rawUrl = hlsObject.uri;
     } else {
         fullUrl = new URL(hlsObject.uri, streamInfo.url);
+        rawUrl = fullUrl.toString();
     }
 
     if (fullUrl.hostname !== '127.0.0.1') {
-        hlsObject.uri = createInternalStream(fullUrl.toString(), streamInfo);
+        hlsObject.uri = createInternalStream(rawUrl, streamInfo);
 
         if (hlsObject.map) {
             hlsObject.map = transformObject(streamInfo, hlsObject.map);
         }
+    }
+
+    if (hlsObject.key?.uri) {
+        hlsObject.key = transformObject(streamInfo, hlsObject.key);
+    }
+
+    if (Array.isArray(hlsObject.keys)) {
+        hlsObject.keys = hlsObject.keys.map(transformObject(streamInfo));
     }
 
     return hlsObject;
@@ -44,6 +110,14 @@ function transformMasterPlaylist(streamInfo, hlsPlaylist) {
     };
     hlsPlaylist.variants = hlsPlaylist.variants.map(makeInternalVariants);
 
+    if (hlsPlaylist.key?.uri) {
+        hlsPlaylist.key = transformObject(streamInfo, hlsPlaylist.key);
+    }
+
+    if (Array.isArray(hlsPlaylist.keys)) {
+        hlsPlaylist.keys = hlsPlaylist.keys.map(makeInternalStream);
+    }
+
     return hlsPlaylist;
 }
 
@@ -51,6 +125,14 @@ function transformMediaPlaylist(streamInfo, hlsPlaylist) {
     const makeInternalSegments = transformObject(streamInfo);
     hlsPlaylist.segments = hlsPlaylist.segments.map(makeInternalSegments);
     hlsPlaylist.prefetchSegments = hlsPlaylist.prefetchSegments.map(makeInternalSegments);
+
+    if (hlsPlaylist.key?.uri) {
+        hlsPlaylist.key = transformObject(streamInfo, hlsPlaylist.key);
+    }
+
+    if (Array.isArray(hlsPlaylist.keys)) {
+        hlsPlaylist.keys = hlsPlaylist.keys.map(makeInternalSegments);
+    }
     return hlsPlaylist;
 }
 
@@ -66,16 +148,10 @@ export function isHlsResponse(req, streamInfo) {
 }
 
 export async function handleHlsPlaylist(streamInfo, req, res) {
-    let hlsPlaylist = await req.body.text();
-    hlsPlaylist = HLS.parse(hlsPlaylist);
-
-    hlsPlaylist = hlsPlaylist.isMasterPlaylist
-        ? transformMasterPlaylist(streamInfo, hlsPlaylist)
-        : transformMediaPlaylist(streamInfo, hlsPlaylist);
-
-    hlsPlaylist = HLS.stringify(hlsPlaylist);
-
-    res.send(hlsPlaylist);
+    const rawPlaylist = await req.body.text();
+    const rewritten = rewritePlaylist(rawPlaylist, streamInfo);
+    console.log(rewritten)
+    res.send(rewritten);
 }
 
 async function getSegmentSize(url, config) {

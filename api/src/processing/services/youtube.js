@@ -8,6 +8,7 @@ import { env } from "../../config.js";
 import { getCookie } from "../cookie/manager.js";
 import { createStream } from "../../stream/manage.js";
 import { getYouTubeSession } from "../helpers/youtube-session.js";
+import { getBasicInfo } from "../helpers/youtube-onesie.js";
 
 // https://github.com/LuanRT/YouTube.js/pull/1052
 Platform.shim.eval = async (data) => {
@@ -397,7 +398,11 @@ export default async function (o) {
             };
         }
 
-        info = await yt.actions.execute("/player", args);
+        if (env.ytUseOnesie) {
+            info = await getBasicInfo(yt, args);
+        } else {
+            info = await yt.actions.execute("/player", args);
+        }
     } catch (e) {
         if (e?.info) {
             let errorInfo;
@@ -421,7 +426,7 @@ export default async function (o) {
     if (!info) return { error: "fetch.fail" };
 
     const playability = info.playability_status;
-    const basicInfo = info.video_details;
+    const basicInfo = info.video_details ?? info.basic_info;
 
     switch (playability.status) {
         case "LOGIN_REQUIRED":

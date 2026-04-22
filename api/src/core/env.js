@@ -133,6 +133,7 @@ export const loadEnvs = (env = process.env) => {
         ytAllowBetterAudio: env.YOUTUBE_ALLOW_BETTER_AUDIO !== "0",
         ytPlayerIds: env.YOUTUBE_PLAYER_ID?.split(',')?.map(p => p.trim()),
         ytGeneratePoTokens: env.YOUTUBE_GENERATE_PO_TOKENS !== "0",
+        ytUseOnesie: env.YOUTUBE_USE_ONESIE === "1",
 
         // "never" | "session" | "always"
         forceLocalProcessing: env.FORCE_LOCAL_PROCESSING ?? "never",

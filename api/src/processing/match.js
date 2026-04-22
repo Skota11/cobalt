@@ -29,7 +29,6 @@ import snapchat from "./services/snapchat.js";
 import loom from "./services/loom.js";
 import facebook from "./services/facebook.js";
 import bluesky from "./services/bluesky.js";
-import xiaohongshu from "./services/xiaohongshu.js";
 import newgrounds from "./services/newgrounds.js";
 import nicovideo from "./services/nicovideo.js";
 
@@ -278,15 +277,6 @@ export default async function match({ host, patternMatch, params, authType, retr
                     ...patternMatch,
                     alwaysProxy: params.alwaysProxy,
                     dispatcher
-                });
-                break;
-
-            case "xiaohongshu":
-                r = await xiaohongshu({
-                    ...patternMatch,
-                    h265: params.allowH265,
-                    isAudioOnly,
-                    dispatcher,
                 });
                 break;
 
